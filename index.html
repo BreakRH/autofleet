@@ -310,7 +310,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px;" id="retiros-disponibles"></div>
         <div class="section-card">
           <div class="section-header"><div class="section-title">Historial de retiros</div></div>
-          <table><thead><tr><th>Fecha</th><th>Socio</th><th>Monto retirado</th><th>Nota</th></tr></thead>
+          <table><thead><tr><th>Fecha</th><th>Socio</th><th>Monto retirado</th><th>Nota</th><th style="width:80px"></th></tr></thead>
           <tbody id="retiros-historial"></tbody></table>
         </div>
       </div>
@@ -479,6 +479,24 @@
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-retiro')">Cancelar</button>
       <button class="btn btn-primary" id="btn-confirmar-retiro" onclick="confirmarRetiro()">Confirmar retiro</button>
+    </div>
+  </div>
+</div>
+
+<!-- Editar Retiro -->
+<div class="modal-overlay" id="modal-editar-retiro">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-title">Editar retiro</div>
+    <input type="hidden" id="editar-retiro-id">
+    <input type="hidden" id="editar-retiro-mov-id">
+    <div class="alert-box alert-warning" style="margin-bottom:16px;">Editando un retiro ya registrado. El saldo se recalculará automáticamente.</div>
+    <div class="form-full"><label>Socio</label><input type="text" id="editar-retiro-socio-nombre" readonly style="background:var(--bg-sec);opacity:0.7"></div>
+    <div class="form-full"><label>Monto ($)</label><input type="number" id="editar-retiro-monto" placeholder="ej: 500000"></div>
+    <div class="form-full"><label>Fecha</label><input type="date" id="editar-retiro-fecha"></div>
+    <div class="form-full"><label>Nota (opcional)</label><input type="text" id="editar-retiro-nota" placeholder="ej: Distribución de utilidades marzo"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-editar-retiro')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-editar-retiro" onclick="guardarEdicionRetiro()">Guardar cambios</button>
     </div>
   </div>
 </div>
@@ -937,8 +955,12 @@ function renderRetiros() {
         <td style="font-weight:600">${r.socio_nombre}</td>
         <td style="font-weight:700;color:var(--green-dark)">$${fmt(r.monto)}</td>
         <td style="color:var(--text-sec);font-size:12px">${r.nota || '-'}</td>
+        <td><div class="actions-row">
+          <button class="btn-icon" title="Editar" onclick="abrirEditarRetiro('${r.id}')">✏️</button>
+          <button class="btn-icon" title="Eliminar" onclick="eliminarRetiro('${r.id}')">🗑️</button>
+        </div></td>
       </tr>`).join('')
-    : '<tr><td colspan="4" class="empty-state">Sin retiros registrados</td></tr>';
+    : '<tr><td colspan="5" class="empty-state">Sin retiros registrados</td></tr>';
 }
 
 function abrirRetiro(socioKey, socioNombre, saldo) {
@@ -976,7 +998,63 @@ async function confirmarRetiro() {
   renderRetiros(); renderDashboard();
 }
 
-// ─── CHOFERES ────────────────────────────────────────────────
+function abrirEditarRetiro(retiroId) {
+  const r = S.retiros.find(x => x.id === retiroId);
+  if (!r) return;
+  // find linked movement
+  const mov = S.movimientos.find(m => m.retiro_id === retiroId);
+  document.getElementById('editar-retiro-id').value = retiroId;
+  document.getElementById('editar-retiro-mov-id').value = mov ? mov.id : '';
+  document.getElementById('editar-retiro-socio-nombre').value = r.socio_nombre;
+  document.getElementById('editar-retiro-monto').value = r.monto;
+  document.getElementById('editar-retiro-fecha').value = r.fecha;
+  document.getElementById('editar-retiro-nota').value = r.nota || '';
+  document.getElementById('modal-editar-retiro').classList.add('open');
+}
+
+async function guardarEdicionRetiro() {
+  const retiroId = document.getElementById('editar-retiro-id').value;
+  const movId    = document.getElementById('editar-retiro-mov-id').value;
+  const monto    = Number(document.getElementById('editar-retiro-monto').value) || 0;
+  const fecha    = document.getElementById('editar-retiro-fecha').value || today();
+  const nota     = document.getElementById('editar-retiro-nota').value || null;
+  if (!monto || monto <= 0) return alert('Ingresá un monto válido');
+  setBtnLoading('btn-guardar-editar-retiro', true);
+  const updates = { monto, fecha, nota };
+  const promises = [db.from('retiros').update(updates).eq('id', retiroId)];
+  if (movId) {
+    const r = S.retiros.find(x => x.id === retiroId);
+    promises.push(db.from('movimientos').update({
+      monto, fecha,
+      descripcion: `Retiro de ganancias — ${r?.socio_nombre || ''}`,
+      notas: nota
+    }).eq('id', movId));
+  }
+  await Promise.all(promises);
+  // update local cache
+  const r = S.retiros.find(x => x.id === retiroId);
+  if (r) Object.assign(r, updates);
+  if (movId) {
+    const mov = S.movimientos.find(m => m.id === movId);
+    if (mov) Object.assign(mov, { monto, fecha, notas: nota });
+  }
+  setBtnLoading('btn-guardar-editar-retiro', false);
+  closeModal('modal-editar-retiro');
+  renderRetiros(); renderDashboard();
+}
+
+async function eliminarRetiro(retiroId) {
+  if (!confirm('¿Eliminar este retiro? El saldo del socio se recalculará automáticamente.')) return;
+  const mov = S.movimientos.find(m => m.retiro_id === retiroId);
+  const promises = [db.from('retiros').delete().eq('id', retiroId)];
+  if (mov) promises.push(db.from('movimientos').delete().eq('id', mov.id));
+  await Promise.all(promises);
+  S.retiros     = S.retiros.filter(r => r.id !== retiroId);
+  if (mov) S.movimientos = S.movimientos.filter(m => m.id !== mov.id);
+  renderRetiros(); renderDashboard();
+}
+
+
 function renderChoferes() {
   populateAutoSelects();
   const list = document.getElementById('choferes-list');
