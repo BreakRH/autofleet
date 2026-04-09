@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoFleet</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1a1a; background: #f5f5f0; font-size: 14px; min-height: 100vh; }
+  :root {
+    --green: #1D9E75; --green-dark: #0F6E56; --green-light: #EAF3DE; --green-text: #3B6D11;
+    --red: #D85A30; --red-light: #FCEBEB; --red-text: #A32D2D;
+    --amber: #BA7517; --amber-light: #FAEEDA; --amber-text: #854F0B;
+    --blue: #378ADD; --blue-light: #E6F1FB; --blue-text: #185FA5;
+    --purple-light: #EEEDFE; --purple-text: #534AB7;
+    --gray: #5F5E5A; --gray-light: #F1EFE8;
+    --border: rgba(0,0,0,0.12); --border-strong: rgba(0,0,0,0.2);
+    --bg: #ffffff; --bg-sec: #f8f8f5; --text: #1a1a1a; --text-sec: #6b6b65;
+    --radius: 8px; --radius-lg: 12px;
+  }
+
+  /* LOADING */
+  #loading-screen { position: fixed; inset: 0; background: #f5f5f0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; }
+  #loading-screen .logo { font-size: 48px; margin-bottom: 12px; }
+  #loading-screen .msg { font-size: 14px; color: var(--text-sec); }
+
+  /* LOGIN */
+  .login-screen { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 20px; background: #f5f5f0; }
+  .login-screen.visible { display: flex; }
+  .login-logo { font-size: 40px; margin-bottom: 10px; }
+  .login-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .login-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 32px; }
+  .login-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 380px; margin-bottom: 24px; }
+  .login-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; cursor: pointer; transition: all 0.15s; text-align: center; background: var(--bg); }
+  .login-card:hover { border-color: var(--green); background: var(--green-light); }
+  .login-card.selected { border: 2px solid var(--green); background: var(--green-light); }
+  .login-card-icon { font-size: 28px; margin-bottom: 8px; }
+  .login-card-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .login-card-desc { font-size: 11px; color: var(--text-sec); }
+  .login-form { width: 100%; max-width: 380px; }
+  .login-form label { display: block; font-size: 11px; color: var(--text-sec); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+  .login-form input, .login-form select { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 14px; background: var(--bg); color: var(--text); font-family: inherit; margin-bottom: 12px; }
+  .login-form input:focus, .login-form select:focus { outline: none; border-color: var(--green); }
+  .login-btn { width: 100%; padding: 12px; border-radius: var(--radius); border: none; font-size: 14px; font-weight: 600; cursor: pointer; background: var(--green); color: white; margin-top: 4px; transition: background 0.15s; }
+  .login-btn:hover { background: var(--green-dark); }
+  .login-error { color: var(--red-text); font-size: 13px; text-align: center; margin-top: 10px; min-height: 20px; }
+  .login-hint { font-size: 11px; color: var(--text-sec); text-align: center; margin-top: 8px; background: var(--gray-light); padding: 8px 12px; border-radius: var(--radius); }
+  .login-back { font-size: 13px; color: var(--text-sec); cursor: pointer; text-align: center; margin-top: 14px; text-decoration: underline; }
+
+  /* APP */
+  .app { display: none; min-height: 100vh; }
+  .app.visible { display: flex; flex-direction: column; }
+  .app-inner { display: flex; flex: 1; }
+
+  /* SIDEBAR */
+  .sidebar { width: 210px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; background: var(--bg); min-height: calc(100vh - 0px); }
+  .logo { padding: 0 16px 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .logo-title { font-size: 16px; font-weight: 700; }
+  .logo-sub { font-size: 11px; color: var(--text-sec); }
+  .sidebar-footer { margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--border); }
+  .nav-item { padding: 9px 16px; cursor: pointer; font-size: 13px; color: var(--text-sec); display: flex; align-items: center; gap: 9px; transition: all 0.15s; border-left: 2px solid transparent; }
+  .nav-item:hover { background: var(--bg-sec); color: var(--text); }
+  .nav-item.active { color: var(--text); font-weight: 600; border-left: 2px solid var(--green); background: var(--green-light); }
+
+  /* TOPBAR (chofer) */
+  .topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .topbar-logo { font-size: 16px; font-weight: 700; }
+  .topbar-badge { font-size: 11px; background: var(--green-light); color: var(--green-text); padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  .topbar-logout { font-size: 12px; color: var(--text-sec); cursor: pointer; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+  .topbar-logout:hover { background: var(--bg-sec); }
+
+  /* MAIN */
+  .main { flex: 1; overflow: auto; padding: 24px; min-width: 0; background: #f5f5f0; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .page-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 22px; }
+
+  /* CARDS */
+  .cards-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .metric-card { background: var(--bg); border-radius: var(--radius-lg); padding: 14px 16px; border: 1px solid var(--border); }
+  .metric-label { font-size: 11px; color: var(--text-sec); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+  .metric-value { font-size: 22px; font-weight: 700; }
+  .metric-value.pos { color: var(--green); }
+  .metric-value.neg { color: var(--red); }
+  .metric-value.warn { color: var(--amber); }
+  .metric-sub { font-size: 11px; color: var(--text-sec); margin-top: 4px; }
+
+  /* SECTION CARD */
+  .section-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; margin-bottom: 18px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .section-title { font-size: 15px; font-weight: 600; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { font-size: 11px; color: var(--text-sec); text-align: left; padding: 0 10px 10px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; border-bottom: 1px solid var(--border); }
+  td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg-sec); }
+
+  /* BADGES */
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: var(--green-light); color: var(--green-text); }
+  .badge-red { background: var(--red-light); color: var(--red-text); }
+  .badge-amber { background: var(--amber-light); color: var(--amber-text); }
+  .badge-blue { background: var(--blue-light); color: var(--blue-text); }
+  .badge-gray { background: var(--gray-light); color: var(--gray); }
+  .badge-purple { background: var(--purple-light); color: var(--purple-text); }
+
+  /* BUTTONS */
+  .btn { padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--bg); cursor: pointer; font-size: 13px; color: var(--text); transition: all 0.15s; font-family: inherit; font-weight: 500; }
+  .btn:hover { background: var(--bg-sec); }
+  .btn-primary { background: var(--green); color: white; border-color: var(--green); }
+  .btn-primary:hover { background: var(--green-dark); }
+  .btn-danger { background: var(--red-light); color: var(--red-text); border-color: #F09595; }
+  .btn-danger:hover { background: #F7C1C1; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-icon { padding: 4px 7px; font-size: 13px; border: none; background: transparent; cursor: pointer; border-radius: var(--radius); opacity: 0.55; transition: all 0.15s; }
+  .btn-icon:hover { opacity: 1; background: var(--bg-sec); }
+  .btn-full { width: 100%; padding: 12px; font-size: 14px; font-weight: 600; }
+
+  /* FORMS */
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-full { margin-bottom: 12px; }
+  label { display: block; font-size: 11px; color: var(--text-sec); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 500; }
+  input, select, textarea { width: 100%; padding: 8px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--bg); color: var(--text); font-family: inherit; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,158,117,0.1); }
+
+  /* MODAL */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg); border-radius: var(--radius-lg); padding: 22px; width: 520px; max-width: 100%; border: 1px solid var(--border); max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 16px; }
+
+  /* MISC */
+  .owner-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .owner-box { background: var(--bg-sec); border-radius: var(--radius); padding: 14px; border: 1px solid var(--border); }
+  .owner-name { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .owner-stat { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .owner-stat:last-child { border-bottom: none; }
+  .owner-stat .val { font-weight: 600; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .progress-bar { background: var(--bg-sec); border-radius: 99px; height: 7px; overflow: hidden; margin-top: 6px; border: 1px solid var(--border); }
+  .progress-fill { height: 100%; border-radius: 99px; }
+  .km-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 10px; }
+  .km-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .km-name { font-weight: 600; font-size: 14px; }
+  .km-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .km-stat { text-align: center; background: var(--bg-sec); border-radius: var(--radius); padding: 8px; }
+  .km-stat-val { font-size: 16px; font-weight: 700; }
+  .km-stat-lbl { font-size: 10px; color: var(--text-sec); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
+  .alert-box { padding: 11px 15px; border-radius: var(--radius); margin-bottom: 10px; font-size: 13px; font-weight: 500; }
+  .alert-warning { background: var(--amber-light); color: var(--amber-text); border-left: 3px solid var(--amber); }
+  .alert-danger { background: var(--red-light); color: var(--red-text); border-left: 3px solid var(--red); }
+  .alert-success { background: var(--green-light); color: var(--green-text); border-left: 3px solid var(--green); }
+  .alert-info { background: var(--blue-light); color: var(--blue-text); border-left: 3px solid var(--blue); }
+  .debt-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .debt-row:last-child { border-bottom: none; }
+  .tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .tab { padding: 9px 16px; font-size: 13px; cursor: pointer; color: var(--text-sec); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
+  .tab.active { color: var(--text); font-weight: 700; border-bottom: 2px solid var(--green); }
+  .empty-state { text-align: center; padding: 36px; color: var(--text-sec); font-size: 13px; }
+  .actions-row { display: flex; gap: 4px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* RETIROS */
+  .retiro-socio-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; background: var(--bg); }
+  .retiro-socio-card.con-saldo { border-color: #9FE1CB; }
+
+  /* CHOFER PORTAL */
+  .chofer-portal { padding: 24px; max-width: 500px; margin: 0 auto; }
+  .chofer-welcome { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .chofer-welcome-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 24px; }
+
+  @media (max-width: 640px) {
+    .sidebar { width: 52px; }
+    .logo, .logo-title, .logo-sub, .nav-item span, .sidebar-footer span { display: none; }
+    .nav-item { justify-content: center; padding: 12px 0; }
+    .form-row, .form-row-3, .owner-split { grid-template-columns: 1fr; }
+    .cards-row { grid-template-columns: 1fr 1fr; }
+    .login-options { grid-template-columns: 1fr; }
+    .main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading-screen">
+  <div class="logo">🚗</div>
+  <div class="msg">Cargando AutoFleet...</div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen" class="login-screen">
+  <div class="login-logo">🚗</div>
+  <div class="login-title">AutoFleet</div>
+  <div class="login-sub">Sistema de gestión de alquiler de autos</div>
+  <div class="login-options">
+    <div class="login-card" id="card-owner" onclick="selectRole('owner')">
+      <div class="login-card-icon">🔐</div>
+      <div class="login-card-title">Propietario</div>
+      <div class="login-card-desc">Acceso total al sistema</div>
+    </div>
+    <div class="login-card" id="card-chofer" onclick="selectRole('chofer')">
+      <div class="login-card-icon">🚘</div>
+      <div class="login-card-title">Chofer</div>
+      <div class="login-card-desc">Registrar pago y KM</div>
+    </div>
+  </div>
+  <div id="form-owner" class="login-form" style="display:none">
+    <label>Contraseña</label>
+    <input type="password" id="owner-password" placeholder="Ingresá la contraseña" onkeydown="if(event.key==='Enter')loginOwner()">
+    <button class="login-btn" onclick="loginOwner()">Ingresar como propietario</button>
+    <div class="login-error" id="owner-error"></div>
+    <div class="login-hint">Contraseña inicial: <strong>1234</strong> — cambiala desde Ajustes</div>
+    <div class="login-back" onclick="selectRole(null)">← Volver</div>
+  </div>
+  <div id="form-chofer" class="login-form" style="display:none">
+    <label>Tu nombre</label>
+    <select id="chofer-select"><option value="">Seleccioná tu nombre...</option></select>
+    <label>PIN de chofer</label>
+    <input type="password" id="chofer-pin" placeholder="Tu PIN de 4 dígitos" maxlength="4" onkeydown="if(event.key==='Enter')loginChofer()">
+    <button class="login-btn" onclick="loginChofer()">Ingresar</button>
+    <div class="login-error" id="chofer-error"></div>
+    <div class="login-back" onclick="selectRole(null)">← Volver</div>
+  </div>
+</div>
+
+<!-- OWNER APP -->
+<div id="owner-app" class="app">
+  <div class="app-inner">
+    <div class="sidebar">
+      <div class="logo">
+        <div class="logo-title">🚗 AutoFleet</div>
+        <div class="logo-sub">Panel propietario</div>
+      </div>
+      <div class="nav-item active" onclick="showPage('dashboard')"><span>📊</span><span>Dashboard</span></div>
+      <div class="nav-item" onclick="showPage('movimientos')"><span>💰</span><span>Movimientos</span></div>
+      <div class="nav-item" onclick="showPage('retiros')"><span>💸</span><span>Retiros</span></div>
+      <div class="nav-item" onclick="showPage('choferes')"><span>👤</span><span>Choferes</span></div>
+      <div class="nav-item" onclick="showPage('deudas')"><span>📋</span><span>Deudas</span></div>
+      <div class="nav-item" onclick="showPage('mantenimiento')"><span>🔧</span><span>Mantenimiento</span></div>
+      <div class="nav-item" onclick="showPage('ajustes')"><span>⚙️</span><span>Ajustes</span></div>
+      <div class="sidebar-footer">
+        <button class="btn btn-sm" onclick="logout()" style="width:100%">Cerrar sesión</button>
+      </div>
+    </div>
+    <div class="main">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page active">
+        <div class="page-title">Dashboard general</div>
+        <div class="page-sub">Resumen financiero del negocio (50/50)</div>
+        <div class="cards-row" id="dashboard-cards"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;">
+          <div class="section-card">
+            <div class="section-header"><div class="section-title">División por socio</div></div>
+            <div class="owner-split" id="owner-split"></div>
+          </div>
+          <div class="section-card">
+            <div class="section-header"><div class="section-title">Rentabilidad</div></div>
+            <div id="rentabilidad-section"></div>
+          </div>
+        </div>
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title">Últimos movimientos</div>
+            <button class="btn btn-primary btn-sm" onclick="showPage('movimientos')">Ver todos</button>
+          </div>
+          <table><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Responsable</th><th style="text-align:right">Monto</th></tr></thead>
+          <tbody id="recent-movements"></tbody></table>
+        </div>
+      </div>
+
+      <!-- MOVIMIENTOS -->
+      <div id="page-movimientos" class="page">
+        <div class="page-title">Movimientos</div>
+        <div class="page-sub">Ingresos, egresos y gastos del negocio</div>
+        <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-primary" onclick="abrirModalMov(null)">+ Nuevo movimiento</button>
+          <select id="filter-tipo" onchange="renderMovimientos()" style="width:auto">
+            <option value="">Todos los tipos</option>
+            <option value="ingreso">Ingresos</option>
+            <option value="egreso">Egresos</option>
+            <option value="gasto-compartido">Gasto compartido</option>
+            <option value="gasto-yo">Gasto mío</option>
+            <option value="gasto-socio">Gasto socio</option>
+            <option value="retiro">Retiros</option>
+          </select>
+          <select id="filter-auto" onchange="renderMovimientos()" style="width:auto">
+            <option value="">Todos los autos</option>
+          </select>
+        </div>
+        <div class="section-card" style="padding:0;overflow:hidden;">
+          <table><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Auto</th><th>Responsable</th><th style="text-align:right">Monto</th><th style="width:70px"></th></tr></thead>
+          <tbody id="movimientos-table"></tbody></table>
+        </div>
+      </div>
+
+      <!-- RETIROS -->
+      <div id="page-retiros" class="page">
+        <div class="page-title">Retiro de ganancias</div>
+        <div class="page-sub">Retirar utilidades y dejar el saldo en cero por socio</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px;" id="retiros-disponibles"></div>
+        <div class="section-card">
+          <div class="section-header"><div class="section-title">Historial de retiros</div></div>
+          <table><thead><tr><th>Fecha</th><th>Socio</th><th>Monto retirado</th><th>Nota</th></tr></thead>
+          <tbody id="retiros-historial"></tbody></table>
+        </div>
+      </div>
+
+      <!-- CHOFERES -->
+      <div id="page-choferes" class="page">
+        <div class="page-title">Choferes</div>
+        <div class="page-sub">Gestión de choferes y seguimiento de kilometraje</div>
+        <div style="margin-bottom:18px;">
+          <button class="btn btn-primary" onclick="openModal('modal-chofer')">+ Nuevo chofer</button>
+        </div>
+        <div id="choferes-list"></div>
+      </div>
+
+      <!-- DEUDAS -->
+      <div id="page-deudas" class="page">
+        <div class="page-title">Deudas de choferes</div>
+        <div class="page-sub">Préstamos, infracciones y saldos pendientes</div>
+        <div style="display:flex;gap:10px;margin-bottom:18px;">
+          <button class="btn btn-primary" onclick="openModal('modal-deuda')">+ Registrar deuda</button>
+          <button class="btn" onclick="openModal('modal-pago-deuda')">💳 Registrar pago</button>
+        </div>
+        <div class="tab-bar">
+          <div class="tab active" onclick="switchTab(this,'deudas','tab-deudas-pend')">Pendientes</div>
+          <div class="tab" onclick="switchTab(this,'deudas','tab-deudas-sald')">Saldadas</div>
+        </div>
+        <div id="tab-deudas-pend" style="display:block"><div id="deudas-pendientes-list"></div></div>
+        <div id="tab-deudas-sald" style="display:none"><div id="deudas-saldadas-list"></div></div>
+      </div>
+
+      <!-- MANTENIMIENTO -->
+      <div id="page-mantenimiento" class="page">
+        <div class="page-title">Mantenimiento</div>
+        <div class="page-sub">Servicios realizados y alertas de próximos mantenimientos</div>
+        <div style="margin-bottom:18px;">
+          <button class="btn btn-primary" onclick="openModal('modal-mantenimiento')">+ Registrar servicio</button>
+        </div>
+        <div id="alertas-mant" style="margin-bottom:14px;"></div>
+        <div class="section-card" style="padding:0;overflow:hidden;">
+          <table><thead><tr><th>Auto</th><th>Tipo</th><th>Fecha</th><th>KM al servicio</th><th>Próximo KM</th><th>Costo</th><th>Notas</th><th></th></tr></thead>
+          <tbody id="mantenimiento-table"></tbody></table>
+        </div>
+      </div>
+
+      <!-- AJUSTES -->
+      <div id="page-ajustes" class="page">
+        <div class="page-title">Ajustes</div>
+        <div class="page-sub">Configuración del sistema</div>
+        <div class="section-card" style="max-width:460px;margin-bottom:18px;">
+          <div class="section-title" style="margin-bottom:16px;">Cambiar contraseña de propietario</div>
+          <div class="form-full"><label>Contraseña actual</label><input type="password" id="aj-pass-actual" placeholder="Contraseña actual"></div>
+          <div class="form-full"><label>Nueva contraseña</label><input type="password" id="aj-pass-nueva" placeholder="Nueva contraseña"></div>
+          <div class="form-full"><label>Confirmar nueva contraseña</label><input type="password" id="aj-pass-conf" placeholder="Repetila"></div>
+          <button class="btn btn-primary" onclick="cambiarPassword()">Guardar contraseña</button>
+          <div id="aj-pass-msg" style="margin-top:10px;font-size:13px;"></div>
+        </div>
+        <div class="section-card" style="max-width:460px;margin-bottom:18px;">
+          <div class="section-title" style="margin-bottom:16px;">Autos registrados</div>
+          <div id="autos-list" style="margin-bottom:14px;"></div>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="nuevo-auto-nombre" placeholder="Nombre del auto (ej: Logan 2017)" style="flex:1">
+            <button class="btn btn-primary" onclick="agregarAuto()">Agregar</button>
+          </div>
+        </div>
+        <div class="section-card" style="max-width:460px;margin-bottom:18px;">
+          <div class="section-title" style="margin-bottom:16px;">PIN de choferes</div>
+          <div id="choferes-pin-list"></div>
+        </div>
+        <div class="section-card" style="max-width:460px;">
+          <div class="section-title" style="margin-bottom:16px;">Datos del negocio</div>
+          <div class="form-row">
+            <div><label>Fecha de inicio del negocio</label><input type="date" id="aj-fecha-inicio"></div>
+            <div><label>Inversión total ($)</label><input type="number" id="aj-inversion" placeholder="ej: 2000000"></div>
+          </div>
+          <div class="form-row">
+            <div><label>Tu nombre</label><input type="text" id="aj-nombre-yo" placeholder="Tu nombre"></div>
+            <div><label>Nombre del socio</label><input type="text" id="aj-nombre-socio" placeholder="Nombre del socio"></div>
+          </div>
+          <button class="btn btn-primary" onclick="guardarAjustes()">Guardar ajustes</button>
+          <div id="aj-msg" style="margin-top:10px;font-size:13px;"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- CHOFER APP -->
+<div id="chofer-app" class="app">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="topbar-logo">🚗 AutoFleet</div>
+      <div class="topbar-badge">Portal Chofer</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:13px;color:var(--text-sec)" id="chofer-welcome-name"></span>
+      <button class="topbar-logout" onclick="logout()">Salir</button>
+    </div>
+  </div>
+  <div class="chofer-portal">
+    <div class="chofer-welcome" id="chofer-greeting"></div>
+    <div class="chofer-welcome-sub" id="chofer-auto-info"></div>
+    <div class="section-card">
+      <div class="section-title" style="margin-bottom:16px;">Registrar pago y KM</div>
+      <div class="form-row">
+        <div><label>Fecha</label><input type="date" id="portal-fecha"></div>
+        <div><label>KM actual del auto</label><input type="number" id="portal-km" placeholder="ej: 85340"></div>
+      </div>
+      <div class="form-full"><label>Monto abonado ($)</label><input type="number" id="portal-monto" placeholder="ej: 315000"></div>
+      <div class="form-full"><label>Nota (opcional)</label><input type="text" id="portal-nota" placeholder="ej: Semana del 4 al 10 de marzo"></div>
+      <button class="btn btn-primary btn-full" onclick="registrarPagoChofer()" style="margin-top:6px;">Registrar pago</button>
+      <div id="portal-feedback" style="margin-top:12px;"></div>
+    </div>
+    <div class="section-card">
+      <div class="section-title" style="margin-bottom:16px;">Mis pagos registrados</div>
+      <div id="portal-historial"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- Movimiento -->
+<div class="modal-overlay" id="modal-movimiento">
+  <div class="modal">
+    <div class="modal-title" id="modal-mov-title">Nuevo movimiento</div>
+    <input type="hidden" id="mov-edit-id">
+    <div class="form-row">
+      <div><label>Fecha</label><input type="date" id="mov-fecha"></div>
+      <div><label>Tipo</label>
+        <select id="mov-tipo">
+          <option value="ingreso">Ingreso</option>
+          <option value="egreso">Egreso</option>
+          <option value="gasto-compartido">Gasto compartido (50/50)</option>
+          <option value="gasto-yo">Gasto mío</option>
+          <option value="gasto-socio">Gasto del socio</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-full"><label>Descripción</label><input type="text" id="mov-desc" placeholder="ej: Seguro Logan 2017 Febrero"></div>
+    <div class="form-row">
+      <div><label>Monto ($)</label><input type="number" id="mov-monto" placeholder="ej: 197000"></div>
+      <div><label>Auto</label><select id="mov-auto"><option value="">Sin especificar</option></select></div>
+    </div>
+    <div class="form-full"><label>Notas adicionales</label><input type="text" id="mov-notas" placeholder="opcional..."></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-movimiento')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-mov" onclick="guardarMovimiento()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Retiro -->
+<div class="modal-overlay" id="modal-retiro">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-title" id="modal-retiro-title">Registrar retiro</div>
+    <input type="hidden" id="retiro-socio-key">
+    <div class="alert-box alert-info" style="margin-bottom:16px;">Al confirmar, el saldo de este socio quedará en <strong>$0</strong>. Podés retirar un monto parcial si querés.</div>
+    <div class="form-full">
+      <label>Saldo disponible</label>
+      <div style="font-size:24px;font-weight:700;color:var(--green);padding:8px 0;" id="retiro-monto-display">$0</div>
+    </div>
+    <div class="form-full"><label>Monto a retirar ($)</label><input type="number" id="retiro-monto-input"></div>
+    <div class="form-full"><label>Fecha</label><input type="date" id="retiro-fecha"></div>
+    <div class="form-full"><label>Nota (opcional)</label><input type="text" id="retiro-nota" placeholder="ej: Distribución de utilidades marzo"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-retiro')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-confirmar-retiro" onclick="confirmarRetiro()">Confirmar retiro</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chofer -->
+<div class="modal-overlay" id="modal-chofer">
+  <div class="modal">
+    <div class="modal-title">Nuevo chofer</div>
+    <div class="form-row">
+      <div><label>Nombre</label><input type="text" id="ch-nombre" placeholder="ej: Juan García"></div>
+      <div><label>Teléfono</label><input type="text" id="ch-tel" placeholder="ej: 1154321234"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Auto asignado</label><select id="ch-auto"><option value="">Seleccionar...</option></select></div>
+      <div><label>KM inicial</label><input type="number" id="ch-km" placeholder="ej: 80000"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Fecha inicio</label><input type="date" id="ch-fecha"></div>
+      <div><label>Alquiler semanal ($)</label><input type="number" id="ch-alquiler" placeholder="ej: 315000"></div>
+    </div>
+    <div class="form-full"><label>PIN del chofer (4 dígitos)</label><input type="password" id="ch-pin" placeholder="ej: 1234" maxlength="4"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-chofer')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-chofer" onclick="guardarChofer()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Deuda -->
+<div class="modal-overlay" id="modal-deuda">
+  <div class="modal">
+    <div class="modal-title">Registrar deuda de chofer</div>
+    <div class="form-row">
+      <div><label>Chofer</label><select id="deuda-chofer"><option value="">Seleccionar...</option></select></div>
+      <div><label>Tipo</label>
+        <select id="deuda-tipo">
+          <option value="prestamo">Préstamo</option>
+          <option value="infraccion">Infracción</option>
+          <option value="daño">Daño al auto</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>Monto total ($)</label><input type="number" id="deuda-monto" placeholder="ej: 465000"></div>
+      <div><label>Fecha</label><input type="date" id="deuda-fecha"></div>
+    </div>
+    <div class="form-full"><label>Descripción</label><input type="text" id="deuda-desc" placeholder="ej: Préstamo para pago de embargo"></div>
+    <div class="form-full"><label>Forma de devolución</label><input type="text" id="deuda-devol" placeholder="ej: 100k por semana"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-deuda')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-deuda" onclick="guardarDeuda()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pago deuda -->
+<div class="modal-overlay" id="modal-pago-deuda">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-title">Registrar pago de deuda</div>
+    <div class="form-full"><label>Deuda</label><select id="pago-deuda-id"><option value="">Seleccionar...</option></select></div>
+    <div class="form-row">
+      <div><label>Monto pagado ($)</label><input type="number" id="pago-deuda-monto" placeholder="ej: 100000"></div>
+      <div><label>Fecha</label><input type="date" id="pago-deuda-fecha"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-pago-deuda')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-pago-deuda" onclick="guardarPagoDeuda()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mantenimiento -->
+<div class="modal-overlay" id="modal-mantenimiento">
+  <div class="modal">
+    <div class="modal-title">Registrar mantenimiento</div>
+    <div class="form-row">
+      <div><label>Auto</label><select id="mant-auto"><option value="">Seleccionar...</option></select></div>
+      <div><label>Tipo</label>
+        <select id="mant-tipo">
+          <option value="aceite">Cambio de aceite</option>
+          <option value="frenos">Frenos</option>
+          <option value="neumaticos">Neumáticos</option>
+          <option value="mayor">Servicio mayor</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>Fecha</label><input type="date" id="mant-fecha"></div>
+      <div><label>KM al momento</label><input type="number" id="mant-km" placeholder="ej: 85000"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Próximo servicio (KM)</label><input type="number" id="mant-km-prox" placeholder="ej: 90000"></div>
+      <div><label>Costo ($)</label><input type="number" id="mant-costo" placeholder="ej: 84600"></div>
+    </div>
+    <div class="form-full"><label>Notas</label><input type="text" id="mant-notas" placeholder="ej: Shell Helix Ultra 5W-30"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-mantenimiento')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-mant" onclick="guardarMantenimiento()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Chofer -->
+<div class="modal-overlay" id="modal-pin-chofer">
+  <div class="modal" style="max-width:340px;">
+    <div class="modal-title">Cambiar PIN de chofer</div>
+    <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;" id="pin-chofer-nombre"></div>
+    <div class="form-full"><label>Nuevo PIN (4 dígitos)</label><input type="password" id="nuevo-pin-val" maxlength="4" placeholder="ej: 5678"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-pin-chofer')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPinChofer()">Guardar PIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// CONFIGURACIÓN SUPABASE — reemplazá con tus credenciales
+// ═══════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://uunzwghwwnqsxlcwnqvr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1bnp3Z2h3d25xc3hsY3ducXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MDE1NzgsImV4cCI6MjA5MTI3NzU3OH0.V2DZYIUFKBWc30uE30rwoR-Sin9CRHaCLkrPoR2mKKE';
+// ═══════════════════════════════════════════════════════
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── ESTADO LOCAL (cache) ────────────────────────────────────
+let S = {
+  autos: [], movimientos: [], choferes: [], deudas: [],
+  pagosDeuda: [], mantenimientos: [], pagosChofer: [], retiros: [],
+  config: { owner_password:'1234', nombre_yo:'Vos', nombre_socio:'Tu socio', fecha_inicio:'', inversion_total:'0' }
+};
+let currentUser = null;
+let editingPinChoferId = null;
+
+// ─── HELPERS ─────────────────────────────────────────────────
+const fmt  = n => Math.round(n).toLocaleString('es-AR');
+const fmtK = n => { const a=Math.abs(n); if(a>=1000000) return (n/1000000).toFixed(1)+'M'; if(a>=1000) return Math.round(n/1000)+'k'; return Math.round(n).toString(); };
+const uid  = () => crypto.randomUUID ? crypto.randomUUID() : '_'+Math.random().toString(36).substr(2,9);
+const today= () => new Date().toISOString().split('T')[0];
+const autoNombre   = id => { const a=S.autos.find(x=>x.id===id); return a?a.nombre:'-'; };
+const choferNombre = id => { const c=S.choferes.find(x=>x.id===id); return c?c.nombre:'-'; };
+
+function setBtnLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading ? `<span class="spinner"></span>Guardando...` : btn.dataset.label || btn.textContent;
+}
+
+// ─── SUPABASE: CARGA INICIAL ─────────────────────────────────
+async function loadAllData() {
+  const [autos, choferes, movimientos, deudas, pagosDeuda,
+         mantenimientos, pagosChofer, retiros, config] = await Promise.all([
+    db.from('autos').select('*'),
+    db.from('choferes').select('*'),
+    db.from('movimientos').select('*').order('fecha', {ascending: false}),
+    db.from('deudas').select('*'),
+    db.from('pagos_deuda').select('*'),
+    db.from('mantenimientos').select('*'),
+    db.from('pagos_chofer').select('*').order('fecha', {ascending: false}),
+    db.from('retiros').select('*').order('fecha', {ascending: false}),
+    db.from('config').select('*')
+  ]);
+  S.autos          = autos.data || [];
+  S.choferes       = choferes.data || [];
+  S.movimientos    = movimientos.data || [];
+  S.deudas         = deudas.data || [];
+  S.pagosDeuda     = pagosDeuda.data || [];
+  S.mantenimientos = mantenimientos.data || [];
+  S.pagosChofer    = pagosChofer.data || [];
+  S.retiros        = retiros.data || [];
+  if (config.data) config.data.forEach(r => S.config[r.key] = r.value);
+}
+
+async function saveConfig(key, value) {
+  S.config[key] = value;
+  await db.from('config').upsert({ key, value }, { onConflict: 'key' });
+}
+
+// ─── FINANZAS ────────────────────────────────────────────────
+function calcFinancials() {
+  let ingresos=0, egresos=0, gastosCompart=0, gastosMios=0, gastosSocio=0;
+  S.movimientos.forEach(m => {
+    const v = Number(m.monto);
+    if (m.tipo==='ingreso') ingresos += v;
+    else if (m.tipo==='egreso' || m.tipo==='retiro') egresos += v;
+    else if (m.tipo==='gasto-compartido') { gastosCompart += v; egresos += v; }
+    else if (m.tipo==='gasto-yo')  { gastosMios += v; egresos += v; }
+    else if (m.tipo==='gasto-socio') { gastosSocio += v; egresos += v; }
+  });
+  const retirosYo    = S.retiros.filter(r=>r.socio==='yo').reduce((s,r)=>s+Number(r.monto),0);
+  const retirosSocio = S.retiros.filter(r=>r.socio==='socio').reduce((s,r)=>s+Number(r.monto),0);
+  const saldo = ingresos - egresos;
+  const totalInversion = Number(S.config.inversion_total) || 0;
+  const roi = totalInversion > 0 ? (saldo / totalInversion * 100) : 0;
+  let diasNegocio = 1;
+  if (S.config.fecha_inicio) diasNegocio = Math.max(1, Math.round((new Date() - new Date(S.config.fecha_inicio)) / 86400000));
+  const rentAnual = saldo / diasNegocio * 365;
+  const gastosMioTotal   = gastosMios   + gastosCompart/2 + retirosYo;
+  const gastosSocioTotal = gastosSocio  + gastosCompart/2 + retirosSocio;
+  const saldoMio   = ingresos/2 - gastosMioTotal;
+  const saldoSocio = ingresos/2 - gastosSocioTotal;
+  const deudaTotal = S.deudas.reduce((s,d) => s + Number(d.saldo_pendiente ?? d.monto), 0);
+  return { ingresos, egresos, saldo, gastosCompart, gastosMios, gastosSocio,
+           roi, rentAnual, totalInversion, saldoMio, saldoSocio,
+           gastosMioTotal, gastosSocioTotal, deudaTotal, retirosYo, retirosSocio };
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────
+function selectRole(role) {
+  document.getElementById('form-owner').style.display = 'none';
+  document.getElementById('form-chofer').style.display = 'none';
+  document.getElementById('card-owner').classList.remove('selected');
+  document.getElementById('card-chofer').classList.remove('selected');
+  if (!role) return;
+  if (role === 'owner') {
+    document.getElementById('card-owner').classList.add('selected');
+    document.getElementById('form-owner').style.display = 'block';
+    setTimeout(() => document.getElementById('owner-password').focus(), 50);
+  } else {
+    document.getElementById('card-chofer').classList.add('selected');
+    const sel = document.getElementById('chofer-select');
+    sel.innerHTML = '<option value="">Seleccioná tu nombre...</option>' +
+      S.choferes.map(ch => `<option value="${ch.id}">${ch.nombre}</option>`).join('');
+    document.getElementById('form-chofer').style.display = 'block';
+  }
+}
+
+function loginOwner() {
+  const pass = document.getElementById('owner-password').value;
+  if (pass === S.config.owner_password) {
+    currentUser = { role: 'owner' };
+    document.getElementById('login-screen').classList.remove('visible');
+    document.getElementById('owner-app').classList.add('visible');
+    document.getElementById('owner-password').value = '';
+    renderDashboard(); populateAutoSelects();
+  } else {
+    document.getElementById('owner-error').textContent = 'Contraseña incorrecta';
+    setTimeout(() => document.getElementById('owner-error').textContent = '', 2500);
+  }
+}
+
+function loginChofer() {
+  const choferId = document.getElementById('chofer-select').value;
+  const pin = document.getElementById('chofer-pin').value;
+  if (!choferId) { document.getElementById('chofer-error').textContent = 'Seleccioná tu nombre'; return; }
+  const chofer = S.choferes.find(c => c.id === choferId);
+  if (!chofer) return;
+  if (chofer.pin && pin !== chofer.pin) {
+    document.getElementById('chofer-error').textContent = 'PIN incorrecto';
+    setTimeout(() => document.getElementById('chofer-error').textContent = '', 2500);
+    return;
+  }
+  currentUser = { role: 'chofer', choferId, nombre: chofer.nombre };
+  document.getElementById('login-screen').classList.remove('visible');
+  document.getElementById('chofer-app').classList.add('visible');
+  document.getElementById('chofer-pin').value = '';
+  document.getElementById('chofer-welcome-name').textContent = chofer.nombre;
+  document.getElementById('chofer-greeting').textContent = `Hola, ${chofer.nombre} 👋`;
+  const auto = S.autos.find(a => a.id === chofer.auto_id);
+  document.getElementById('chofer-auto-info').textContent = auto ? `Auto asignado: ${auto.nombre}` : 'Sin auto asignado';
+  document.getElementById('portal-fecha').value = today();
+  renderPortalChofer();
+}
+
+function logout() {
+  currentUser = null;
+  document.getElementById('owner-app').classList.remove('visible');
+  document.getElementById('chofer-app').classList.remove('visible');
+  document.getElementById('login-screen').classList.add('visible');
+  selectRole(null);
+}
+
+// ─── NAVIGATION ──────────────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('#owner-app .page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick')?.includes("'" + id + "'")) n.classList.add('active');
+  });
+  const renders = { dashboard: renderDashboard, movimientos: renderMovimientos, retiros: renderRetiros,
+                    choferes: renderChoferes, deudas: renderDeudas, mantenimiento: renderMantenimiento, ajustes: renderAjustes };
+  renders[id]?.();
+}
+
+// ─── DASHBOARD ───────────────────────────────────────────────
+function renderDashboard() {
+  const f = calcFinancials();
+  const YO = S.config.nombre_yo || 'Vos', SOCIO = S.config.nombre_socio || 'Tu socio';
+  const cards = [
+    { label:'Saldo actual',      value: fmtK(f.saldo),      cls: f.saldo>=0?'pos':'neg',         sub:'Ingresos − Egresos' },
+    { label:'Ingresos totales',  value: fmtK(f.ingresos),   cls: 'pos',                           sub:'' },
+    { label:'Egresos totales',   value: fmtK(f.egresos),    cls: 'neg',                           sub:'' },
+    { label:'ROI total',         value: f.roi.toFixed(1)+'%', cls: f.roi>=0?'pos':'neg',          sub:'Sobre inversión' },
+    { label:'Rent. anual',       value: fmtK(f.rentAnual),  cls: f.rentAnual>=0?'pos':'neg',      sub:'$/año (proyect.)' },
+    { label:'Deuda choferes',    value: fmtK(f.deudaTotal), cls: f.deudaTotal>0?'warn':'pos',     sub:'Pendiente cobro' }
+  ];
+  document.getElementById('dashboard-cards').innerHTML = cards.map(c =>
+    `<div class="metric-card"><div class="metric-label">${c.label}</div><div class="metric-value ${c.cls}">$${c.value}</div>${c.sub?`<div class="metric-sub">${c.sub}</div>`:''}</div>`
+  ).join('');
+
+  document.getElementById('owner-split').innerHTML = `
+    <div class="owner-box"><div class="owner-name">👤 ${YO} (50%)</div>
+      <div class="owner-stat"><span>Ingresos</span><span class="val pos">$${fmtK(f.ingresos/2)}</span></div>
+      <div class="owner-stat"><span>Gastos</span><span class="val neg">$${fmtK(f.gastosMioTotal)}</span></div>
+      <div class="owner-stat"><span>Saldo neto</span><span class="val ${f.saldoMio>=0?'pos':'neg'}">$${fmtK(f.saldoMio)}</span></div>
+    </div>
+    <div class="owner-box"><div class="owner-name">🤝 ${SOCIO} (50%)</div>
+      <div class="owner-stat"><span>Ingresos</span><span class="val pos">$${fmtK(f.ingresos/2)}</span></div>
+      <div class="owner-stat"><span>Gastos</span><span class="val neg">$${fmtK(f.gastosSocioTotal)}</span></div>
+      <div class="owner-stat"><span>Saldo neto</span><span class="val ${f.saldoSocio>=0?'pos':'neg'}">$${fmtK(f.saldoSocio)}</span></div>
+    </div>`;
+
+  const roiColor = f.roi >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('rentabilidad-section').innerHTML = `
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+        <span style="color:var(--text-sec)">ROI sobre inversión</span>
+        <span style="font-weight:700;color:${roiColor}">${f.roi.toFixed(1)}%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100,Math.abs(f.roi))}%;background:${roiColor}"></div></div>
+    </div>
+    <div class="owner-stat"><span style="color:var(--text-sec)">Inversión total</span><span class="val">$${fmtK(f.totalInversion)}</span></div>
+    <div class="owner-stat"><span style="color:var(--text-sec)">Ganancia neta</span><span class="val ${f.saldo>=0?'pos':'neg'}">$${fmtK(f.saldo)}</span></div>
+    <div class="owner-stat"><span style="color:var(--text-sec)">Rent. anual proyect.</span><span class="val ${f.rentAnual>=0?'pos':'neg'}">$${fmtK(f.rentAnual)}/año</span></div>`;
+
+  const recientes = [...S.movimientos].slice(0, 7);
+  document.getElementById('recent-movements').innerHTML = recientes.length
+    ? recientes.map(m => movRowSimple(m)).join('')
+    : '<tr><td colspan="5" class="empty-state">Sin movimientos registrados</td></tr>';
+}
+
+function tipoLabel(tipo) {
+  const map = { ingreso:'<span class="badge badge-green">Ingreso</span>', egreso:'<span class="badge badge-red">Egreso</span>',
+    'gasto-compartido':'<span class="badge badge-blue">Compartido</span>', 'gasto-yo':'<span class="badge badge-amber">Mío</span>',
+    'gasto-socio':'<span class="badge badge-gray">Socio</span>', retiro:'<span class="badge badge-purple">Retiro</span>' };
+  return map[tipo] || `<span class="badge badge-gray">${tipo}</span>`;
+}
+function respNombre(tipo) {
+  if (tipo==='gasto-yo') return S.config.nombre_yo || 'Vos';
+  if (tipo==='gasto-socio') return S.config.nombre_socio || 'Tu socio';
+  if (tipo==='gasto-compartido') return 'Ambos';
+  return '-';
+}
+function movRowSimple(m) {
+  const sign = m.tipo==='ingreso' ? '+' : '-';
+  const col  = m.tipo==='ingreso' ? 'pos' : 'neg';
+  return `<tr><td style="color:var(--text-sec)">${m.fecha}</td><td>${m.descripcion}</td><td>${tipoLabel(m.tipo)}</td><td style="color:var(--text-sec)">${respNombre(m.tipo)}</td><td style="text-align:right;font-weight:700" class="${col}">${sign}$${fmtK(m.monto)}</td></tr>`;
+}
+
+// ─── MOVIMIENTOS ─────────────────────────────────────────────
+function renderMovimientos() {
+  populateAutoSelects();
+  const ft = document.getElementById('filter-tipo').value;
+  const fa = document.getElementById('filter-auto').value;
+  let movs = [...S.movimientos].sort((a,b) => b.fecha.localeCompare(a.fecha));
+  if (ft) movs = movs.filter(m => m.tipo === ft);
+  if (fa) movs = movs.filter(m => m.auto_id === fa);
+  document.getElementById('movimientos-table').innerHTML = movs.length
+    ? movs.map(m => {
+        const sign = m.tipo==='ingreso' ? '+' : '-';
+        const col  = m.tipo==='ingreso' ? 'pos' : 'neg';
+        const isRetiro = m.tipo === 'retiro';
+        return `<tr>
+          <td style="color:var(--text-sec)">${m.fecha}</td>
+          <td>${m.descripcion}</td>
+          <td>${tipoLabel(m.tipo)}</td>
+          <td style="color:var(--text-sec)">${m.auto_id ? autoNombre(m.auto_id) : '-'}</td>
+          <td style="color:var(--text-sec)">${respNombre(m.tipo)}</td>
+          <td style="text-align:right;font-weight:700" class="${col}">${sign}$${fmtK(m.monto)}</td>
+          <td><div class="actions-row">
+            ${!isRetiro ? `<button class="btn-icon" title="Editar" onclick="abrirEditarMov('${m.id}')">✏️</button>` : ''}
+            <button class="btn-icon" title="Eliminar" onclick="eliminarMov('${m.id}')">🗑️</button>
+          </div></td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="7" class="empty-state">Sin movimientos</td></tr>';
+}
+
+function abrirModalMov(editId) {
+  const m = editId ? S.movimientos.find(x => x.id === editId) : null;
+  document.getElementById('modal-mov-title').textContent = m ? 'Editar movimiento' : 'Nuevo movimiento';
+  document.getElementById('mov-edit-id').value = editId || '';
+  document.getElementById('mov-fecha').value  = m ? m.fecha : today();
+  document.getElementById('mov-tipo').value   = m ? m.tipo  : 'ingreso';
+  document.getElementById('mov-desc').value   = m ? m.descripcion : '';
+  document.getElementById('mov-monto').value  = m ? m.monto : '';
+  document.getElementById('mov-auto').value   = m ? (m.auto_id || '') : '';
+  document.getElementById('mov-notas').value  = m ? (m.notas || '') : '';
+  populateAutoSelects();
+  document.getElementById('modal-movimiento').classList.add('open');
+}
+function abrirEditarMov(id) { abrirModalMov(id); }
+
+async function guardarMovimiento() {
+  const editId  = document.getElementById('mov-edit-id').value;
+  const payload = {
+    fecha: document.getElementById('mov-fecha').value || today(),
+    descripcion: document.getElementById('mov-desc').value,
+    tipo:  document.getElementById('mov-tipo').value,
+    monto: Number(document.getElementById('mov-monto').value) || 0,
+    auto_id: document.getElementById('mov-auto').value || null,
+    notas: document.getElementById('mov-notas').value || null,
+  };
+  if (!payload.descripcion || !payload.monto) return alert('Completá descripción y monto');
+  setBtnLoading('btn-guardar-mov', true);
+  if (editId) {
+    await db.from('movimientos').update(payload).eq('id', editId);
+    const idx = S.movimientos.findIndex(m => m.id === editId);
+    if (idx >= 0) S.movimientos[idx] = { ...S.movimientos[idx], ...payload };
+  } else {
+    const newMov = { id: uid(), ...payload };
+    await db.from('movimientos').insert(newMov);
+    S.movimientos.unshift(newMov);
+  }
+  setBtnLoading('btn-guardar-mov', false);
+  closeModal('modal-movimiento');
+  renderMovimientos(); renderDashboard();
+}
+
+async function eliminarMov(id) {
+  if (!confirm('¿Eliminar este movimiento?')) return;
+  await db.from('movimientos').delete().eq('id', id);
+  S.movimientos = S.movimientos.filter(m => m.id !== id);
+  renderMovimientos(); renderDashboard();
+}
+
+// ─── RETIROS ─────────────────────────────────────────────────
+function renderRetiros() {
+  const f = calcFinancials();
+  const YO = S.config.nombre_yo || 'Vos', SOCIO = S.config.nombre_socio || 'Tu socio';
+  const socios = [{ key:'yo', nombre:YO, saldo:f.saldoMio, retiros:f.retirosYo },
+                  { key:'socio', nombre:SOCIO, saldo:f.saldoSocio, retiros:f.retirosSocio }];
+  document.getElementById('retiros-disponibles').innerHTML = socios.map(s => {
+    const disp = Math.max(0, s.saldo);
+    const color = s.saldo > 0 ? 'var(--green)' : s.saldo < 0 ? 'var(--red)' : 'var(--gray)';
+    return `<div class="retiro-socio-card ${s.saldo > 0 ? 'con-saldo' : ''}">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px;">👤 ${s.nombre}</div>
+      <div style="font-size:11px;color:var(--text-sec);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Saldo disponible</div>
+      <div style="font-size:28px;font-weight:700;color:${color};margin-bottom:10px;">$${fmt(s.saldo)}</div>
+      <div style="font-size:12px;color:var(--text-sec);margin-bottom:14px;">Retiros acumulados: $${fmt(s.retiros)}</div>
+      ${disp > 0
+        ? `<button class="btn btn-primary" style="width:100%" onclick="abrirRetiro('${s.key}','${s.nombre}',${s.saldo})">💸 Retirar ganancias</button>`
+        : `<button class="btn" style="width:100%;opacity:0.45;cursor:not-allowed" disabled>Sin saldo disponible</button>`}
+    </div>`;
+  }).join('');
+
+  const hist = [...S.retiros].sort((a,b) => b.fecha.localeCompare(a.fecha));
+  document.getElementById('retiros-historial').innerHTML = hist.length
+    ? hist.map(r => `<tr>
+        <td style="color:var(--text-sec)">${r.fecha}</td>
+        <td style="font-weight:600">${r.socio_nombre}</td>
+        <td style="font-weight:700;color:var(--green-dark)">$${fmt(r.monto)}</td>
+        <td style="color:var(--text-sec);font-size:12px">${r.nota || '-'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" class="empty-state">Sin retiros registrados</td></tr>';
+}
+
+function abrirRetiro(socioKey, socioNombre, saldo) {
+  document.getElementById('retiro-socio-key').value = socioKey;
+  document.getElementById('modal-retiro-title').textContent = `Retiro — ${socioNombre}`;
+  document.getElementById('retiro-monto-display').textContent = `$${fmt(saldo)}`;
+  document.getElementById('retiro-monto-input').value = Math.round(saldo);
+  document.getElementById('retiro-fecha').value = today();
+  document.getElementById('retiro-nota').value = '';
+  document.getElementById('modal-retiro').classList.add('open');
+}
+
+async function confirmarRetiro() {
+  const socioKey    = document.getElementById('retiro-socio-key').value;
+  const monto       = Number(document.getElementById('retiro-monto-input').value) || 0;
+  const fecha       = document.getElementById('retiro-fecha').value || today();
+  const nota        = document.getElementById('retiro-nota').value;
+  if (!monto || monto <= 0) return alert('Ingresá un monto válido');
+  const f = calcFinancials();
+  const saldoDisp = socioKey === 'yo' ? f.saldoMio : f.saldoSocio;
+  if (monto > saldoDisp + 1) return alert(`El monto supera el saldo disponible ($${fmt(saldoDisp)})`);
+  const socioNombre = socioKey === 'yo' ? (S.config.nombre_yo || 'Vos') : (S.config.nombre_socio || 'Tu socio');
+  setBtnLoading('btn-confirmar-retiro', true);
+  const retiroId = uid();
+  const retiro = { id: retiroId, socio: socioKey, socio_nombre: socioNombre, monto, fecha, nota: nota || null };
+  const movRetiro = { id: uid(), fecha, descripcion: `Retiro de ganancias — ${socioNombre}`, tipo: 'retiro', monto, auto_id: null, notas: nota || null, retiro_id: retiroId };
+  await Promise.all([
+    db.from('retiros').insert(retiro),
+    db.from('movimientos').insert(movRetiro)
+  ]);
+  S.retiros.unshift(retiro);
+  S.movimientos.unshift(movRetiro);
+  setBtnLoading('btn-confirmar-retiro', false);
+  closeModal('modal-retiro');
+  renderRetiros(); renderDashboard();
+}
+
+// ─── CHOFERES ────────────────────────────────────────────────
+function renderChoferes() {
+  populateAutoSelects();
+  const list = document.getElementById('choferes-list');
+  if (!S.choferes.length) { list.innerHTML = '<div class="empty-state">No hay choferes registrados</div>'; return; }
+  list.innerHTML = S.choferes.map(ch => {
+    const pagos = S.pagosChofer.filter(p => p.chofer_id === ch.id);
+    const kmActual = pagos.length ? Math.max(...pagos.map(p => Number(p.km) || 0)) : Number(ch.km_inicial) || 0;
+    const kmRecorridos = kmActual - (Number(ch.km_inicial) || 0);
+    const dias = Math.max(1, Math.round((new Date() - new Date(ch.fecha_inicio || today())) / 86400000));
+    const kmPorDia = (kmRecorridos / dias).toFixed(0);
+    const um = S.mantenimientos.filter(m => m.auto_id === ch.auto_id).sort((a,b) => b.km - a.km)[0];
+    let proxHTML = '';
+    if (um && um.km_prox) {
+      const rest = Number(um.km_prox) - kmActual;
+      const color = rest < 1000 ? 'var(--red)' : rest < 3000 ? 'var(--amber)' : 'var(--green)';
+      const d2 = kmPorDia > 0 ? Math.round(rest / kmPorDia) : null;
+      proxHTML = `<div style="margin-top:8px;font-size:12px;color:${color};font-weight:500;">⚙️ Próximo mantenimiento: ${fmt(rest)} km restantes${d2 ? ' (~'+d2+' días)' : ''}</div>`;
+    }
+    return `<div class="km-card">
+      <div class="km-header">
+        <div class="km-name">👤 ${ch.nombre} <span style="font-weight:400;color:var(--text-sec);font-size:12px">— ${autoNombre(ch.auto_id)}</span></div>
+        <span class="badge badge-green">Activo</span>
+      </div>
+      <div class="km-stats">
+        <div class="km-stat"><div class="km-stat-val">${fmt(kmActual)}</div><div class="km-stat-lbl">KM actual</div></div>
+        <div class="km-stat"><div class="km-stat-val">${kmPorDia}</div><div class="km-stat-lbl">KM/día</div></div>
+        <div class="km-stat"><div class="km-stat-val">${fmt(Math.round(kmPorDia * 30))}</div><div class="km-stat-lbl">KM/mes</div></div>
+      </div>
+      ${proxHTML}
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-sm btn-danger" onclick="eliminarChofer('${ch.id}')">Eliminar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function guardarChofer() {
+  const payload = {
+    id: uid(),
+    nombre: document.getElementById('ch-nombre').value,
+    tel: document.getElementById('ch-tel').value || null,
+    auto_id: document.getElementById('ch-auto').value || null,
+    km_inicial: Number(document.getElementById('ch-km').value) || 0,
+    fecha_inicio: document.getElementById('ch-fecha').value || today(),
+    alquiler_semanal: Number(document.getElementById('ch-alquiler').value) || 0,
+    pin: document.getElementById('ch-pin').value || '0000'
+  };
+  if (!payload.nombre) return alert('Ingresá el nombre del chofer');
+  setBtnLoading('btn-guardar-chofer', true);
+  await db.from('choferes').insert(payload);
+  S.choferes.push(payload);
+  setBtnLoading('btn-guardar-chofer', false);
+  closeModal('modal-chofer');
+  ['ch-nombre','ch-tel','ch-km','ch-alquiler','ch-pin'].forEach(id => document.getElementById(id).value = '');
+  renderChoferes();
+}
+
+async function eliminarChofer(id) {
+  if (!confirm('¿Eliminar este chofer?')) return;
+  await db.from('choferes').delete().eq('id', id);
+  S.choferes = S.choferes.filter(c => c.id !== id);
+  renderChoferes();
+}
+
+// ─── DEUDAS ──────────────────────────────────────────────────
+function renderDeudas() {
+  const pend = S.deudas.filter(d => Number(d.saldo_pendiente ?? d.monto) > 0);
+  const sald = S.deudas.filter(d => Number(d.saldo_pendiente ?? d.monto) <= 0);
+  renderDeudaList('deudas-pendientes-list', pend);
+  renderDeudaList('deudas-saldadas-list', sald, true);
+  populateDeudaSelect();
+}
+
+function renderDeudaList(elId, deudas, saldada = false) {
+  const el = document.getElementById(elId);
+  if (!deudas.length) { el.innerHTML = `<div class="empty-state">${saldada ? 'Sin deudas saldadas' : 'Sin deudas pendientes'}</div>`; return; }
+  const tm = { prestamo:'Préstamo', infraccion:'Infracción', daño:'Daño al auto', otro:'Otro' };
+  el.innerHTML = deudas.map(d => {
+    const orig = Number(d.monto), pend = Number(d.saldo_pendiente ?? d.monto);
+    const pct = orig > 0 ? Math.round((1 - pend/orig) * 100) : 100;
+    return `<div class="section-card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+        <div><span style="font-weight:700">${choferNombre(d.chofer_id)}</span> <span class="badge badge-amber">${tm[d.tipo]||d.tipo}</span></div>
+        <div style="text-align:right"><div style="font-weight:700;color:${pend>0?'var(--red)':'var(--green)'}">$${fmtK(pend)} pend.</div><div style="font-size:11px;color:var(--text-sec)">de $${fmtK(orig)}</div></div>
+      </div>
+      <div style="font-size:13px;color:var(--text-sec);margin-bottom:6px">${d.descripcion || ''}</div>
+      ${d.devolucion ? `<div style="font-size:12px;color:var(--text-sec)">📅 ${d.devolucion}</div>` : ''}
+      <div class="progress-bar" style="margin-top:10px"><div class="progress-fill" style="width:${pct}%;background:var(--green)"></div></div>
+      <div style="font-size:11px;color:var(--text-sec);margin-top:4px">${pct}% pagado</div>
+    </div>`;
+  }).join('');
+}
+
+async function guardarDeuda() {
+  const monto = Number(document.getElementById('deuda-monto').value) || 0;
+  const payload = {
+    id: uid(),
+    chofer_id: document.getElementById('deuda-chofer').value,
+    tipo: document.getElementById('deuda-tipo').value,
+    monto, saldo_pendiente: monto,
+    fecha: document.getElementById('deuda-fecha').value || today(),
+    descripcion: document.getElementById('deuda-desc').value,
+    devolucion: document.getElementById('deuda-devol').value || null
+  };
+  if (!payload.chofer_id || !payload.monto) return alert('Seleccioná chofer e ingresá monto');
+  setBtnLoading('btn-guardar-deuda', true);
+  await db.from('deudas').insert(payload);
+  S.deudas.push(payload);
+  setBtnLoading('btn-guardar-deuda', false);
+  closeModal('modal-deuda');
+  ['deuda-monto','deuda-desc','deuda-devol'].forEach(id => document.getElementById(id).value = '');
+  renderDeudas();
+}
+
+function populateDeudaSelect() {
+  const pend = S.deudas.filter(d => Number(d.saldo_pendiente ?? d.monto) > 0);
+  document.getElementById('pago-deuda-id').innerHTML = '<option value="">Seleccionar...</option>' +
+    pend.map(d => `<option value="${d.id}">${choferNombre(d.chofer_id)} — ${d.descripcion} ($${fmtK(d.saldo_pendiente||d.monto)})</option>`).join('');
+}
+
+async function guardarPagoDeuda() {
+  const id = document.getElementById('pago-deuda-id').value;
+  const monto = Number(document.getElementById('pago-deuda-monto').value) || 0;
+  const fecha = document.getElementById('pago-deuda-fecha').value || today();
+  if (!id || !monto) return alert('Seleccioná la deuda e ingresá el monto');
+  const deuda = S.deudas.find(d => d.id === id);
+  if (!deuda) return;
+  const nuevoSaldo = Math.max(0, Number(deuda.saldo_pendiente ?? deuda.monto) - monto);
+  setBtnLoading('btn-guardar-pago-deuda', true);
+  const pagoId = uid();
+  await Promise.all([
+    db.from('deudas').update({ saldo_pendiente: nuevoSaldo }).eq('id', id),
+    db.from('pagos_deuda').insert({ id: pagoId, deuda_id: id, monto, fecha })
+  ]);
+  deuda.saldo_pendiente = nuevoSaldo;
+  S.pagosDeuda.push({ id: pagoId, deuda_id: id, monto, fecha });
+  setBtnLoading('btn-guardar-pago-deuda', false);
+  closeModal('modal-pago-deuda');
+  renderDeudas();
+}
+
+// ─── MANTENIMIENTO ───────────────────────────────────────────
+function renderMantenimiento() {
+  populateAutoSelects();
+  const alertas = [];
+  S.choferes.forEach(ch => {
+    const pagos = S.pagosChofer.filter(p => p.chofer_id === ch.id);
+    const kmActual = pagos.length ? Math.max(...pagos.map(p => Number(p.km)||0)) : Number(ch.km_inicial)||0;
+    const um = S.mantenimientos.filter(m => m.auto_id === ch.auto_id).sort((a,b) => b.km - a.km)[0];
+    if (um && um.km_prox) {
+      const rest = Number(um.km_prox) - kmActual;
+      if (rest < 1000) alertas.push(`<div class="alert-box alert-danger">⚠️ ${autoNombre(ch.auto_id)}: mantenimiento urgente en ${fmt(rest)} km</div>`);
+      else if (rest < 3000) alertas.push(`<div class="alert-box alert-warning">🔔 ${autoNombre(ch.auto_id)}: mantenimiento próximo en ${fmt(rest)} km</div>`);
+    }
+  });
+  document.getElementById('alertas-mant').innerHTML = alertas.join('');
+  const tm = { aceite:'Cambio de aceite', frenos:'Frenos', neumaticos:'Neumáticos', mayor:'Servicio mayor', otro:'Otro' };
+  const mants = [...S.mantenimientos].sort((a,b) => b.fecha.localeCompare(a.fecha));
+  document.getElementById('mantenimiento-table').innerHTML = mants.length
+    ? mants.map(m => `<tr>
+        <td>${autoNombre(m.auto_id)}</td>
+        <td><span class="badge badge-blue">${tm[m.tipo]||m.tipo}</span></td>
+        <td style="color:var(--text-sec)">${m.fecha}</td>
+        <td>${fmt(m.km)} km</td>
+        <td>${m.km_prox ? fmt(m.km_prox)+' km' : '-'}</td>
+        <td>$${fmtK(m.costo||0)}</td>
+        <td style="color:var(--text-sec);font-size:12px">${m.notas||'-'}</td>
+        <td><button class="btn-icon" onclick="eliminarMant('${m.id}')">🗑️</button></td>
+      </tr>`).join('')
+    : '<tr><td colspan="8" class="empty-state">Sin mantenimientos registrados</td></tr>';
+}
+
+async function guardarMantenimiento() {
+  const payload = {
+    id: uid(),
+    auto_id: document.getElementById('mant-auto').value,
+    tipo: document.getElementById('mant-tipo').value,
+    fecha: document.getElementById('mant-fecha').value || today(),
+    km: Number(document.getElementById('mant-km').value) || 0,
+    km_prox: Number(document.getElementById('mant-km-prox').value) || null,
+    costo: Number(document.getElementById('mant-costo').value) || 0,
+    notas: document.getElementById('mant-notas').value || null
+  };
+  if (!payload.auto_id || !payload.km) return alert('Seleccioná el auto e ingresá el KM');
+  setBtnLoading('btn-guardar-mant', true);
+  await db.from('mantenimientos').insert(payload);
+  S.mantenimientos.push(payload);
+  if (payload.costo) {
+    const movMant = { id: uid(), fecha: payload.fecha, descripcion: `Mantenimiento ${autoNombre(payload.auto_id)}`, tipo: 'gasto-compartido', monto: payload.costo, auto_id: payload.auto_id, notas: payload.notas };
+    await db.from('movimientos').insert(movMant);
+    S.movimientos.unshift(movMant);
+  }
+  setBtnLoading('btn-guardar-mant', false);
+  closeModal('modal-mantenimiento');
+  ['mant-km','mant-km-prox','mant-costo','mant-notas'].forEach(id => document.getElementById(id).value = '');
+  renderMantenimiento();
+}
+
+async function eliminarMant(id) {
+  if (!confirm('¿Eliminar este registro de mantenimiento?')) return;
+  await db.from('mantenimientos').delete().eq('id', id);
+  S.mantenimientos = S.mantenimientos.filter(m => m.id !== id);
+  renderMantenimiento();
+}
+
+// ─── AJUSTES ─────────────────────────────────────────────────
+function renderAjustes() {
+  document.getElementById('aj-fecha-inicio').value = S.config.fecha_inicio || '';
+  document.getElementById('aj-inversion').value    = S.config.inversion_total || '';
+  document.getElementById('aj-nombre-yo').value    = S.config.nombre_yo || '';
+  document.getElementById('aj-nombre-socio').value = S.config.nombre_socio || '';
+  document.getElementById('autos-list').innerHTML  = S.autos.map(a =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span>🚗 ${a.nombre}${a.patente ? ' — '+a.patente : ''}</span>
+      <button class="btn btn-sm btn-danger" onclick="eliminarAuto('${a.id}')">Eliminar</button>
+    </div>`).join('') || '<div style="font-size:13px;color:var(--text-sec)">Sin autos registrados</div>';
+  document.getElementById('choferes-pin-list').innerHTML = S.choferes.length
+    ? S.choferes.map(ch =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div><div style="font-size:13px;font-weight:600">${ch.nombre}</div>
+          <div style="font-size:11px;color:var(--text-sec)">PIN: ${'•'.repeat((ch.pin||'').length)}</div></div>
+          <button class="btn btn-sm" onclick="abrirCambiarPin('${ch.id}')">Cambiar PIN</button>
+        </div>`).join('')
+    : '<div class="empty-state">Sin choferes registrados</div>';
+}
+
+async function guardarAjustes() {
+  const updates = {
+    fecha_inicio:    document.getElementById('aj-fecha-inicio').value,
+    inversion_total: document.getElementById('aj-inversion').value,
+    nombre_yo:       document.getElementById('aj-nombre-yo').value || 'Vos',
+    nombre_socio:    document.getElementById('aj-nombre-socio').value || 'Tu socio'
+  };
+  await Promise.all(Object.entries(updates).map(([k,v]) => saveConfig(k, v)));
+  document.getElementById('aj-msg').innerHTML = '<span style="color:var(--green)">✓ Ajustes guardados</span>';
+  setTimeout(() => document.getElementById('aj-msg').innerHTML = '', 2500);
+}
+
+async function cambiarPassword() {
+  const actual = document.getElementById('aj-pass-actual').value;
+  const nueva  = document.getElementById('aj-pass-nueva').value;
+  const conf   = document.getElementById('aj-pass-conf').value;
+  const msg    = document.getElementById('aj-pass-msg');
+  if (actual !== S.config.owner_password) { msg.innerHTML = '<span style="color:var(--red-text)">Contraseña actual incorrecta</span>'; return; }
+  if (nueva !== conf) { msg.innerHTML = '<span style="color:var(--red-text)">Las contraseñas no coinciden</span>'; return; }
+  if (nueva.length < 4) { msg.innerHTML = '<span style="color:var(--red-text)">Mínimo 4 caracteres</span>'; return; }
+  await saveConfig('owner_password', nueva);
+  ['aj-pass-actual','aj-pass-nueva','aj-pass-conf'].forEach(id => document.getElementById(id).value = '');
+  msg.innerHTML = '<span style="color:var(--green)">✓ Contraseña actualizada</span>';
+  setTimeout(() => msg.innerHTML = '', 2500);
+}
+
+async function agregarAuto() {
+  const nombre = document.getElementById('nuevo-auto-nombre').value.trim();
+  if (!nombre) return;
+  const newAuto = { id: uid(), nombre, patente: null };
+  await db.from('autos').insert(newAuto);
+  S.autos.push(newAuto);
+  document.getElementById('nuevo-auto-nombre').value = '';
+  renderAjustes(); populateAutoSelects();
+}
+
+async function eliminarAuto(id) {
+  if (!confirm('¿Eliminar este auto?')) return;
+  await db.from('autos').delete().eq('id', id);
+  S.autos = S.autos.filter(a => a.id !== id);
+  renderAjustes(); populateAutoSelects();
+}
+
+function abrirCambiarPin(choferId) {
+  editingPinChoferId = choferId;
+  const ch = S.choferes.find(c => c.id === choferId);
+  document.getElementById('pin-chofer-nombre').textContent = ch ? ch.nombre : '';
+  document.getElementById('nuevo-pin-val').value = '';
+  document.getElementById('modal-pin-chofer').classList.add('open');
+}
+
+async function guardarPinChofer() {
+  const val = document.getElementById('nuevo-pin-val').value;
+  if (!val || val.length < 4) return alert('El PIN debe tener 4 dígitos');
+  const ch = S.choferes.find(c => c.id === editingPinChoferId);
+  if (!ch) return;
+  await db.from('choferes').update({ pin: val }).eq('id', editingPinChoferId);
+  ch.pin = val;
+  closeModal('modal-pin-chofer');
+  renderAjustes();
+}
+
+// ─── PORTAL CHOFER ───────────────────────────────────────────
+function renderPortalChofer() {
+  if (!currentUser || currentUser.role !== 'chofer') return;
+  const chId = currentUser.choferId;
+  const pagos = S.pagosChofer.filter(p => p.chofer_id === chId).sort((a,b) => b.fecha.localeCompare(a.fecha));
+  document.getElementById('portal-historial').innerHTML = pagos.length
+    ? pagos.map(p => `<div class="debt-row">
+        <div><div style="font-weight:600">${p.fecha}</div><div style="font-size:12px;color:var(--text-sec)">${p.nota||''}</div></div>
+        <div style="text-align:right"><div style="font-weight:700;color:var(--green)">$${fmt(p.monto)}</div><div style="font-size:12px;color:var(--text-sec)">${fmt(p.km)} km</div></div>
+      </div>`).join('')
+    : '<div class="empty-state">Sin pagos registrados aún</div>';
+}
+
+async function registrarPagoChofer() {
+  const chId  = currentUser.choferId;
+  const km    = Number(document.getElementById('portal-km').value) || 0;
+  const monto = Number(document.getElementById('portal-monto').value) || 0;
+  const fecha = document.getElementById('portal-fecha').value || today();
+  const nota  = document.getElementById('portal-nota').value;
+  const fb    = document.getElementById('portal-feedback');
+  if (!monto || !km) { fb.innerHTML = '<div class="alert-box alert-danger">Completá el monto y los KM actuales</div>'; return; }
+  const ch = S.choferes.find(c => c.id === chId);
+  const pagoId = uid(), movId = uid();
+  const pago = { id: pagoId, chofer_id: chId, fecha, km, monto, nota: nota || null };
+  const mov  = { id: movId, fecha, descripcion: `Pago alquiler — ${choferNombre(chId)}`, tipo: 'ingreso', monto, auto_id: ch?.auto_id || null, notas: nota || null };
+  await Promise.all([
+    db.from('pagos_chofer').insert(pago),
+    db.from('movimientos').insert(mov)
+  ]);
+  S.pagosChofer.unshift(pago);
+  S.movimientos.unshift(mov);
+  renderPortalChofer();
+  fb.innerHTML = '<div class="alert-box alert-success">✓ Pago registrado correctamente</div>';
+  document.getElementById('portal-km').value = '';
+  document.getElementById('portal-monto').value = '';
+  document.getElementById('portal-nota').value = '';
+  document.getElementById('portal-fecha').value = today();
+  setTimeout(() => fb.innerHTML = '', 3500);
+}
+
+// ─── SELECTS & MODALS ────────────────────────────────────────
+function populateAutoSelects() {
+  const optsAll  = '<option value="">Sin especificar</option>' + S.autos.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+  const optsPick = '<option value="">Seleccionar...</option>'  + S.autos.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+  const optsFilt = '<option value="">Todos los autos</option>' + S.autos.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+  const setOpts = (id, opts) => { const el=document.getElementById(id); if(el){const v=el.value;el.innerHTML=opts;el.value=v;} };
+  setOpts('mov-auto', optsAll); setOpts('ch-auto', optsPick);
+  setOpts('mant-auto', optsPick); setOpts('filter-auto', optsFilt);
+}
+
+function populateChoferSelects() {
+  const opts = '<option value="">Seleccionar...</option>' + S.choferes.map(ch => `<option value="${ch.id}">${ch.nombre}</option>`).join('');
+  const el = document.getElementById('deuda-chofer'); if(el) el.innerHTML = opts;
+}
+
+function openModal(id) {
+  populateAutoSelects(); populateChoferSelects(); populateDeudaSelect();
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); }));
+
+function switchTab(btn, group, tabId) {
+  btn.closest('.tab-bar').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll(`#page-${group} [id^="tab-${group}"]`).forEach(t => t.style.display = 'none');
+  document.getElementById(tabId).style.display = 'block';
+}
+
+// Guardar labels originales de botones para restore
+document.querySelectorAll('[id^="btn-"]').forEach(btn => btn.dataset.label = btn.textContent);
+
+// ─── INIT ────────────────────────────────────────────────────
+async function init() {
+  try {
+    await loadAllData();
+  } catch(e) {
+    document.getElementById('loading-screen').innerHTML =
+      `<div style="text-align:center;padding:40px;color:#A32D2D">
+        <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">Error de conexión con Supabase</div>
+        <div style="font-size:13px;color:#666">Verificá que SUPABASE_URL y SUPABASE_KEY sean correctos en el archivo index.html</div>
+      </div>`;
+    return;
+  }
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('login-screen').classList.add('visible');
+  document.querySelectorAll('input[type=date]').forEach(i => i.value = today());
+  populateAutoSelects(); populateChoferSelects();
+}
+
+init();
+</script>
+</body>
+</html>
